@@ -1,0 +1,284 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "Profile",
+      "description": "User profile with role and contact information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "User ID matching Firebase Auth UID" },
+        "role": { "type": "string", "enum": ["patient", "doctor", "paramedic", "hospital_admin"] },
+        "full_name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string", "maxLength": 30 },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" }
+      },
+      "required": ["id", "role", "created_at", "updated_at"]
+    },
+    "Patient": {
+      "title": "Patient",
+      "description": "Patient medical registration and emergency contacts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string", "description": "Firebase Auth UID" },
+        "full_name": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "format": "email" },
+        "address": { "type": "string", "maxLength": 300 },
+        "emergency_contact_name": { "type": "string", "maxLength": 100 },
+        "emergency_contact_phone": { "type": "string", "maxLength": 30 },
+        "emergency_contact_relation": { "type": "string", "maxLength": 50 },
+        "abha_id": { "type": "string", "maxLength": 50 },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" }
+      },
+      "required": ["user_id", "full_name", "phone", "emergency_contact_name", "emergency_contact_phone"]
+    },
+    "Doctor": {
+      "title": "Doctor",
+      "description": "Doctor profile, qualifications, registration number and verification status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string", "description": "Firebase Auth UID" },
+        "full_name": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "format": "email" },
+        "profession": { "type": "string", "maxLength": 100 },
+        "specialization": { "type": "string", "maxLength": 100 },
+        "medical_college": { "type": "string", "maxLength": 150 },
+        "medical_education": { "type": "string", "maxLength": 100 },
+        "medical_registration_number": { "type": "string", "maxLength": 100 },
+        "hospital_workplace": { "type": "string", "maxLength": 150 },
+        "hospital_location": { "type": "string", "maxLength": 150 },
+        "verification_status": { "type": "string", "enum": ["PENDING", "VERIFIED", "REJECTED", "UNAVAILABLE"] },
+        "verification_provider": { "type": "string" },
+        "verified_at": { "type": "string" },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" }
+      },
+      "required": ["user_id", "full_name", "phone", "medical_registration_number", "verification_status"]
+    },
+    "Hospital": {
+      "title": "Hospital",
+      "description": "Hospital trauma center with geographic coordinates and capabilities",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 150 },
+        "address": { "type": "string", "maxLength": 300 },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "phone": { "type": "string" },
+        "emergency_capability": { "type": "string" },
+        "trauma_level": { "type": "string" },
+        "is_verified": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["name", "latitude", "longitude"]
+    },
+    "Incident": {
+      "title": "Incident",
+      "description": "Emergency incident triage, AI briefing, location and dispatch state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patient_id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "patient_name": { "type": "string" },
+        "patient_phone": { "type": "string" },
+        "emergency_contact": { "type": "string" },
+        "doctor_id": { "type": "string" },
+        "hospital_id": { "type": "string" },
+        "hospital_name": { "type": "string" },
+        "hospital_address": { "type": "string" },
+        "hospital_distance_km": { "type": "number" },
+        "status": {
+          "type": "string",
+          "enum": [
+            "EMERGENCY_TRIGGERED",
+            "HOSPITAL_REQUESTED",
+            "HOSPITAL_ACCEPTED",
+            "HOSPITAL_REJECTED",
+            "AMBULANCE_ASSIGNED",
+            "AMBULANCE_EN_ROUTE",
+            "PATIENT_PICKED_UP",
+            "IN_TRANSIT",
+            "ARRIVED_AT_HOSPITAL",
+            "RESOLVED",
+            "CANCELLED"
+          ]
+        },
+        "triage_urgency": { "type": "string", "enum": ["RED", "YELLOW", "GREEN", "UNKNOWN"] },
+        "raw_patient_input": { "type": "string" },
+        "audio_recording_url": { "type": "string" },
+        "ai_summary": { "type": "object" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "location_accuracy": { "type": "number" },
+        "address": { "type": "string" },
+        "selected_at": { "type": "string" },
+        "accepted_at": { "type": "string" },
+        "arrived_at": { "type": "string" },
+        "resolved_at": { "type": "string" },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" }
+      },
+      "required": ["status", "latitude", "longitude", "created_at", "updated_at"]
+    },
+    "IncidentEvent": {
+      "title": "IncidentEvent",
+      "description": "Chronological audit event in an emergency incident lifecycle",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "incident_id": { "type": "string" },
+        "event_type": { "type": "string" },
+        "description": { "type": "string" },
+        "actor_role": { "type": "string" },
+        "actor_name": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["incident_id", "event_type", "description", "created_at"]
+    },
+    "IncidentLocation": {
+      "title": "IncidentLocation",
+      "description": "Telemetry location update for active emergency track",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "incident_id": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "accuracy": { "type": "number" },
+        "recorded_at": { "type": "string" }
+      },
+      "required": ["incident_id", "latitude", "longitude", "recorded_at"]
+    },
+    "VitalSign": {
+      "title": "VitalSign",
+      "description": "Biomedical telemetry and clinician recorded vitals",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "incident_id": { "type": "string" },
+        "heart_rate": { "type": "number" },
+        "spo2": { "type": "number" },
+        "systolic_bp": { "type": "number" },
+        "diastolic_bp": { "type": "number" },
+        "source": { "type": "string", "enum": ["DEVICE", "CLINICIAN", "PATIENT_REPORTED"] },
+        "recorded_at": { "type": "string" }
+      },
+      "required": ["incident_id", "source", "recorded_at"]
+    },
+    "Ambulance": {
+      "title": "Ambulance",
+      "description": "Emergency transport CAD vehicle and dispatch status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "incident_id": { "type": "string" },
+        "vehicle_number": { "type": "string" },
+        "driver_name": { "type": "string" },
+        "driver_phone": { "type": "string" },
+        "status": { "type": "string", "enum": ["AVAILABLE", "DISPATCHED", "ON_SCENE", "IN_TRANSIT", "COMPLETED"] },
+        "created_at": { "type": "string" }
+      },
+      "required": ["vehicle_number", "status"]
+    },
+    "MedicalDevice": {
+      "title": "MedicalDevice",
+      "description": "BLE medical monitor pairing status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "device_name": { "type": "string" },
+        "device_type": { "type": "string" },
+        "status": { "type": "string", "enum": ["CONNECTED", "DISCONNECTED", "NO_DATA", "LAST_UPDATED"] },
+        "last_synced": { "type": "string" }
+      },
+      "required": ["user_id", "device_name", "status"]
+    },
+    "HospitalResource": {
+      "title": "HospitalResource",
+      "description": "Hospital bed, trauma bay, and operating room readiness",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "hospital_id": { "type": "string" },
+        "icu_beds_available": { "type": "number" },
+        "trauma_bays_available": { "type": "number" },
+        "operating_rooms_ready": { "type": "boolean" },
+        "last_verified": { "type": "string" }
+      },
+      "required": ["hospital_id", "last_verified"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Emergency notification for patient or attending clinician",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "incident_id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "is_read": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["user_id", "title", "message", "created_at"]
+    }
+  },
+  "firestore": {
+    "/profiles/{profileId}": {
+      "schema": "#/entities/Profile",
+      "description": "User profiles linked to Firebase Auth UID"
+    },
+    "/patients/{patientId}": {
+      "schema": "#/entities/Patient",
+      "description": "Patient medical and contact records"
+    },
+    "/doctors/{doctorId}": {
+      "schema": "#/entities/Doctor",
+      "description": "Doctor profile and HPR registration verification"
+    },
+    "/hospitals/{hospitalId}": {
+      "schema": "#/entities/Hospital",
+      "description": "Physical trauma hospital facilities"
+    },
+    "/incidents/{incidentId}": {
+      "schema": "#/entities/Incident",
+      "description": "Emergency incidents and dispatch statuses"
+    },
+    "/incident_events/{eventId}": {
+      "schema": "#/entities/IncidentEvent",
+      "description": "Audit event log for emergency incidents"
+    },
+    "/incident_locations/{locationId}": {
+      "schema": "#/entities/IncidentLocation",
+      "description": "GPS tracking locations for incidents"
+    },
+    "/vitals/{vitalId}": {
+      "schema": "#/entities/VitalSign",
+      "description": "Medical device and clinical vital signs"
+    },
+    "/ambulances/{ambulanceId}": {
+      "schema": "#/entities/Ambulance",
+      "description": "CAD ambulance transport status"
+    },
+    "/medical_devices/{deviceId}": {
+      "schema": "#/entities/MedicalDevice",
+      "description": "BLE medical device registrations"
+    },
+    "/hospital_resources/{resourceId}": {
+      "schema": "#/entities/HospitalResource",
+      "description": "Hospital bed and trauma bay resource tracking"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "#/entities/Notification",
+      "description": "Incident alerts and triage updates"
+    }
+  }
+}

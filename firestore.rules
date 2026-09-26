@@ -1,0 +1,104 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isDoctor() {
+      return isSignedIn() && exists(/databases/$(database)/documents/doctors/$(request.auth.uid));
+    }
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Profiles: users manage their own profile
+    match /profiles/{profileId} {
+      allow read, write: if isOwner(profileId);
+    }
+
+    // Patients: patient owns their record; doctors can read for triage
+    match /patients/{patientId} {
+      allow read: if isOwner(resource.data.user_id) || isDoctor();
+      allow create: if isSignedIn() && request.resource.data.user_id == request.auth.uid;
+      allow update, delete: if isOwner(resource.data.user_id);
+    }
+
+    // Doctors: doctor manages own profile; signed in users can view doctor details
+    match /doctors/{doctorId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.user_id == request.auth.uid;
+      allow update, delete: if isOwner(resource.data.user_id) || isOwner(doctorId);
+    }
+
+    // Hospitals: public read
+    match /hospitals/{hospitalId} {
+      allow read: if true;
+      allow write: if false; // Managed by backend/admin
+    }
+
+    // Incidents: patient or participating doctor can read/update
+    match /incidents/{incidentId} {
+      allow read: if isSignedIn() && (
+        resource.data.user_id == request.auth.uid ||
+        isDoctor()
+      );
+      allow create: if isSignedIn() && request.resource.data.user_id == request.auth.uid;
+      allow update: if isSignedIn() && (
+        resource.data.user_id == request.auth.uid ||
+        isDoctor()
+      );
+      allow delete: if isSignedIn() && resource.data.user_id == request.auth.uid;
+    }
+
+    // Incident Events: participants can read and write
+    match /incident_events/{eventId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // Incident Locations: location tracking
+    match /incident_locations/{locationId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Vitals: telemetry tracking
+    match /vitals/{vitalId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Ambulances: read-only for signed-in users
+    match /ambulances/{ambulanceId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Medical Devices: user's paired BLE hardware
+    match /medical_devices/{deviceId} {
+      allow read, write: if isSignedIn() && (
+        resource == null || resource.data.user_id == request.auth.uid
+      );
+    }
+
+    // Hospital Resources: read-only status
+    match /hospital_resources/{resourceId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Notifications: user's alerts
+    match /notifications/{notificationId} {
+      allow read, update, delete: if isSignedIn() && resource.data.user_id == request.auth.uid;
+      allow create: if isSignedIn();
+    }
+  }
+}

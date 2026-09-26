@@ -1,0 +1,6 @@
+{
+  "name": "TRAUMANET",
+  "description": "Emergency-care coordination web application with real-time patient-doctor triage, hospital dispatch, and AI-assisted clinical structuring.",
+  "requestFramePermissions": ["geolocation", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
