@@ -1,26 +1,54 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
+import { getFirestore, Firestore, doc, getDocFromServer } from 'firebase/firestore';
+import rawConfig from '../../firebase-applet-config.json';
 
-// Initialize Firebase App
-export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-
-// CRITICAL: The app requires firebaseConfig.firestoreDatabaseId for the provisioned enterprise database
-export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
-export const auth = getAuth(app);
+// Support both embedded firebase-applet-config.json and Vercel/Vite environment variables
+export const resolvedFirebaseConfig = {
+  apiKey: (import.meta.env.VITE_FIREBASE_API_KEY as string) || rawConfig?.apiKey || '',
+  authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string) || rawConfig?.authDomain || '',
+  projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID as string) || rawConfig?.projectId || '',
+  storageBucket: (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string) || rawConfig?.storageBucket || '',
+  messagingSenderId: (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) || rawConfig?.messagingSenderId || '',
+  appId: (import.meta.env.VITE_FIREBASE_APP_ID as string) || rawConfig?.appId || '',
+  firestoreDatabaseId:
+    (import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID as string) ||
+    (rawConfig as any)?.firestoreDatabaseId ||
+    '(default)',
+};
 
 export const isFirebaseConfigured = Boolean(
-  firebaseConfig &&
-  firebaseConfig.apiKey &&
-  firebaseConfig.projectId
+  resolvedFirebaseConfig.apiKey &&
+  resolvedFirebaseConfig.projectId &&
+  resolvedFirebaseConfig.apiKey !== 'MY_FIREBASE_API_KEY'
 );
+
+// Initialize Firebase App safely (prevent duplicate or top-level crash)
+let appInstance: FirebaseApp;
+if (!getApps().length) {
+  appInstance = initializeApp(resolvedFirebaseConfig);
+} else {
+  appInstance = getApp();
+}
+
+export const app = appInstance;
+
+// Enterprise Firestore instance matching databaseId
+export const db: Firestore = resolvedFirebaseConfig.firestoreDatabaseId &&
+  resolvedFirebaseConfig.firestoreDatabaseId !== '(default)'
+  ? getFirestore(app, resolvedFirebaseConfig.firestoreDatabaseId)
+  : getFirestore(app);
+
+// Firebase Auth instance
+export const auth: Auth = getAuth(app);
 
 /**
  * Validate Connection to Firestore (Per SKILL.md mandate)
  */
 export async function testFirestoreConnection(): Promise<boolean> {
+  if (!isFirebaseConfigured) return false;
   try {
+    // Only attempt if authenticated or testing readiness
     await getDocFromServer(doc(db, 'test', 'connection'));
     return true;
   } catch (error) {
@@ -31,8 +59,8 @@ export async function testFirestoreConnection(): Promise<boolean> {
   }
 }
 
-// Trigger initial check safely
-if (typeof window !== 'undefined') {
+// Trigger initial check safely without unhandled rejections
+if (typeof window !== 'undefined' && isFirebaseConfigured) {
   testFirestoreConnection().catch(() => {});
 }
 
@@ -65,7 +93,11 @@ export interface FirestoreErrorInfo {
   };
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): never {
   const currentUser = auth.currentUser;
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),

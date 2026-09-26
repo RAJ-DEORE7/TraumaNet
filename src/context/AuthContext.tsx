@@ -7,8 +7,11 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User as FirebaseUser,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  ConfirmationResult,
 } from 'firebase/auth';
-import { auth, isFirebaseConfigured } from '../lib/firebase';
+import { auth, isFirebaseConfigured, resolvedFirebaseConfig } from '../lib/firebase';
 import {
   saveProfileToFirestore,
   savePatientToFirestore,
@@ -32,10 +35,10 @@ interface AuthContextType {
   doctorProfile: Doctor | null;
   activeIncident: Incident | null;
   setActiveIncident: (incident: Incident | null) => void;
-  signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  signInWithGoogle: () => Promise<{ success: boolean; error?: string; unauthorizedDomain?: string }>;
   signInWithEmail: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signUpWithEmail: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  sendPhoneOtp: (phone: string) => Promise<{ success: boolean; error?: string }>;
+  sendPhoneOtp: (phone: string, containerId?: string) => Promise<{ success: boolean; error?: string; unauthorizedDomain?: string }>;
   verifyPhoneOtp: (phone: string, token: string) => Promise<{ success: boolean; error?: string }>;
   sendEmailOtp: (email: string) => Promise<{ success: boolean; error?: string }>;
   verifyEmailOtp: (email: string, token: string) => Promise<{ success: boolean; error?: string }>;
@@ -75,6 +78,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return saved ? JSON.parse(saved) : null;
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Phone OTP Confirmation State
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
 
   // Sync state to local storage for instant tab resilience
   useEffect(() => {
@@ -159,39 +166,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // Format Firebase Error Messages into helpful descriptions
-  const formatFirebaseAuthError = (err: any): string => {
-    if (!err) return 'Authentication error occurred.';
+  // Format Firebase Error Messages into helpful, actionable descriptions
+  const formatFirebaseAuthError = (err: any): { message: string; unauthorizedDomain?: string } => {
+    if (!err) return { message: 'Authentication error occurred.' };
     const code = err.code || '';
+    const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'your-domain';
+
     switch (code) {
+      case 'auth/unauthorized-domain':
+        return {
+          message: `Domain '${currentHost}' is not authorized in Firebase Authentication. Add '${currentHost}' or 'vercel.app' in Firebase Console → Authentication → Settings → Authorized domains.`,
+          unauthorizedDomain: currentHost,
+        };
+      case 'auth/operation-not-allowed':
+        return {
+          message: `This authentication method is disabled in the Firebase Console. Please enable it in Firebase Console → Authentication → Sign-in method, or sign in using Google.`,
+        };
       case 'auth/invalid-credential':
       case 'auth/wrong-password':
-        return 'Invalid email or password. Please verify your credentials.';
+        return { message: 'Invalid email or password. Please verify your credentials.' };
       case 'auth/user-not-found':
-        return 'No registered account found with this email. Please click "Create Account".';
+        return { message: 'No registered account found with this email. Please click "Create Account".' };
       case 'auth/email-already-in-use':
-        return 'An account already exists with this email address. Please sign in instead.';
+        return { message: 'An account already exists with this email address. Please sign in instead.' };
       case 'auth/weak-password':
-        return 'Password should be at least 6 characters long.';
+        return { message: 'Password should be at least 6 characters long.' };
       case 'auth/invalid-email':
-        return 'Please enter a valid email address.';
-      case 'auth/operation-not-allowed':
-        return 'Email/Password provider is not yet enabled in the Firebase Console. You can sign in instantly with Google Sign-In.';
+        return { message: 'Please enter a valid email address.' };
       case 'auth/popup-closed-by-user':
-        return 'Sign in window was closed before completion.';
+        return { message: 'Sign in window was closed before completion.' };
       case 'auth/cancelled-popup-request':
-        return 'Authentication popup was cancelled.';
+        return { message: 'Authentication popup was cancelled.' };
       case 'auth/network-request-failed':
-        return 'Network connection error. Please check your internet connection.';
+        return { message: 'Network connection error. Please check your internet connection.' };
+      case 'auth/invalid-verification-code':
+        return { message: 'Invalid 6-digit verification code. Please check the code and try again.' };
+      case 'auth/code-expired':
+        return { message: 'The verification code has expired. Please request a new code.' };
+      case 'auth/invalid-phone-number':
+        return { message: 'Please enter a valid phone number with country prefix (e.g. +1 555-019-2834 or +91 98765 43210).' };
+      case 'auth/quota-exceeded':
+        return { message: 'SMS quota exceeded for this Firebase project. Please use Google Sign-In or Email.' };
+      case 'auth/captcha-check-failed':
+        return { message: 'reCAPTCHA verification failed. Please try again.' };
       default:
-        return err.message || 'Authentication failed.';
+        return { message: err.message || 'Authentication failed.' };
     }
   };
 
-  // Firebase Google Sign In (Supported out of the box in AI Studio Firebase projects)
-  const signInWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
+  // Helper to normalize phone numbers to E.164 standard
+  const normalizePhoneNumber = (rawPhone: string): string => {
+    const cleaned = rawPhone.replace(/[^\d+]/g, '');
+    if (cleaned.startsWith('+')) return cleaned;
+    // Default prefix if missing
+    if (cleaned.length === 10) return `+1${cleaned}`;
+    return `+${cleaned}`;
+  };
+
+  // 1. Firebase Google Sign In (Supported out of the box in AI Studio Firebase projects)
+  const signInWithGoogle = async (): Promise<{ success: boolean; error?: string; unauthorizedDomain?: string }> => {
     if (!isFirebaseConfigured) {
-      return { success: false, error: 'Firebase configuration error: project credentials not found.' };
+      return {
+        success: false,
+        error: `Firebase configuration missing: Project '${resolvedFirebaseConfig.projectId || 'unknown'}' requires valid credentials.`,
+      };
     }
     try {
       const provider = new GoogleAuthProvider();
@@ -207,11 +245,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'Google sign-in was cancelled.' };
     } catch (err: any) {
       console.error('Firebase Google sign-in error:', err);
-      return { success: false, error: formatFirebaseAuthError(err) };
+      const formatted = formatFirebaseAuthError(err);
+      return { success: false, error: formatted.message, unauthorizedDomain: formatted.unauthorizedDomain };
     }
   };
 
-  // Firebase Email Sign In (Existing account)
+  // 2. Firebase Email Sign In (Existing account)
   const signInWithEmail = async (
     inputEmail: string,
     password: string
@@ -236,11 +275,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'Authentication failed.' };
     } catch (err: any) {
       console.warn('Firebase email sign-in notice:', err);
-      return { success: false, error: formatFirebaseAuthError(err) };
+      return { success: false, error: formatFirebaseAuthError(err).message };
     }
   };
 
-  // Firebase Email Registration (New account)
+  // 3. Firebase Email Registration (New account)
   const signUpWithEmail = async (
     inputEmail: string,
     password: string
@@ -267,24 +306,87 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'Registration failed.' };
     } catch (err: any) {
       console.warn('Firebase email registration notice:', err);
-      return { success: false, error: formatFirebaseAuthError(err) };
+      return { success: false, error: formatFirebaseAuthError(err).message };
     }
   };
 
-  // Phone OTP Flow: Real check
-  const sendPhoneOtp = async (rawPhone: string): Promise<{ success: boolean; error?: string }> => {
-    setPhone(rawPhone);
-    return {
-      success: false,
-      error: 'Firebase Phone Provider requires SMS Gateway and reCAPTCHA configured. Please authenticate instantly using Google Sign-In or Email.',
-    };
+  // 4. REAL Firebase Phone OTP Flow
+  const sendPhoneOtp = async (
+    rawPhone: string,
+    containerId = 'recaptcha-container'
+  ): Promise<{ success: boolean; error?: string; unauthorizedDomain?: string }> => {
+    if (!isFirebaseConfigured) {
+      return { success: false, error: 'Firebase configuration error.' };
+    }
+
+    const normalized = normalizePhoneNumber(rawPhone);
+    setPhone(normalized);
+
+    try {
+      // Clear previous verifier if any
+      if (recaptchaVerifier) {
+        try {
+          recaptchaVerifier.clear();
+        } catch (_) {}
+      }
+
+      // Check if container element exists in DOM
+      const containerEl = document.getElementById(containerId);
+      if (!containerEl) {
+        return {
+          success: false,
+          error: `reCAPTCHA container '#${containerId}' not found in DOM.`,
+        };
+      }
+
+      // Create new RecaptchaVerifier
+      const verifier = new RecaptchaVerifier(auth, containerId, {
+        size: 'invisible',
+        callback: () => {
+          // reCAPTCHA solved
+        },
+        'expired-callback': () => {
+          console.warn('reCAPTCHA expired.');
+        },
+      });
+
+      setRecaptchaVerifier(verifier);
+
+      // Call real Firebase signInWithPhoneNumber
+      const confirmation = await signInWithPhoneNumber(auth, normalized, verifier);
+      setConfirmationResult(confirmation);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Firebase sendPhoneOtp error:', err);
+      const formatted = formatFirebaseAuthError(err);
+      return { success: false, error: formatted.message, unauthorizedDomain: formatted.unauthorizedDomain };
+    }
   };
 
-  const verifyPhoneOtp = async (_rawPhone: string, _token: string): Promise<{ success: boolean; error?: string }> => {
-    return {
-      success: false,
-      error: 'Firebase Phone Provider requires SMS Gateway and reCAPTCHA configured. Please authenticate with Google or Email.',
-    };
+  const verifyPhoneOtp = async (
+    _rawPhone: string,
+    token: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!confirmationResult) {
+      return {
+        success: false,
+        error: 'No active verification session. Please request a new verification code.',
+      };
+    }
+
+    try {
+      const cred = await confirmationResult.confirm(token);
+      if (cred.user) {
+        setUserId(cred.user.uid);
+        if (cred.user.phoneNumber) setPhone(cred.user.phoneNumber);
+        localStorage.setItem('traumanet_uid', cred.user.uid);
+        return { success: true };
+      }
+      return { success: false, error: 'Invalid verification code.' };
+    } catch (err: any) {
+      console.error('Firebase verifyPhoneOtp error:', err);
+      return { success: false, error: formatFirebaseAuthError(err).message };
+    }
   };
 
   const sendEmailOtp = async (inputEmail: string): Promise<{ success: boolean; error?: string }> => {
@@ -408,6 +510,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setDoctorProfile(null);
     setActiveIncident(null);
     setRole(null);
+    setConfirmationResult(null);
     localStorage.clear();
   };
 
